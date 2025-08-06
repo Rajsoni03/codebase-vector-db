@@ -1,20 +1,18 @@
+from langchain_community.vectorstores import Chroma
+from tqdm import tqdm
+
 class ChromaStore:
-    def __init__(self, embeddings, texts, metadatas, persist_directory):
-        self.embeddings = embeddings
-        self.texts = texts
-        self.metadatas = metadatas
+    def __init__(self, embedder, persist_directory):
+        self.embedder = embedder
         self.persist_directory = persist_directory
 
-    def create_vector_store(self):
-        from langchain_community.vectorstores import Chroma
-        vector_store = Chroma.from_embeddings(
-            embeddings=self.embeddings,
-            texts=self.texts,
-            metadatas=self.metadatas,
-            persist_directory=self.persist_directory
+        self.vector_store = Chroma(
+            embedding_function=embedder,
+            persist_directory=persist_directory
         )
-        return vector_store
 
-    def persist(self, vector_store):
-        vector_store.persist()
-        print(f"Vector database created at {self.persist_directory}")
+    def store_embeddings(self, texts, metadatas, batch_size=16):
+        for i in tqdm(range(0, len(texts), batch_size), desc="Processing Batches"):
+            texts_batch = texts[i:i + batch_size]
+            metadatas_batch = metadatas[i:i + batch_size]
+            self.vector_store.add_texts(texts=texts_batch, metadatas=metadatas_batch)

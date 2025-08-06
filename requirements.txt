@@ -1,3 +1,4 @@
 tqdm
 langchain-community
 chromadb
+ollama

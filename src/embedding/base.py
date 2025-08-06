@@ -1,6 +1,10 @@
-class BaseEmbedder:
-    def embed_documents(self, texts):
-        raise NotImplementedError("Subclasses must implement this method.")
+from abc import ABC, abstractmethod
 
+class BaseEmbedder(ABC):
+    @abstractmethod
+    def embed_documents(self, texts):
+        pass
+
+    @abstractmethod
     def embed_query(self, text):
-        raise NotImplementedError("Subclasses must implement this method.")
+        pass
