@@ -211,3 +211,4 @@ __marimo__/
 sample_codebase/*
 db/*
 !db/README.md
+!sample_codebase/README.md
