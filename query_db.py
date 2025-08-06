@@ -2,8 +2,6 @@ from settings import config
 from src.embedding.ollama_embedder import OllamaEmbedder
 from src.vector_store.chroma_store import ChromaStore
 
-
-
 ##########################################################################
 ###########################[ Global Variables ]###########################
 
@@ -41,7 +39,7 @@ def query_codebase(vector_store, query, top_k=5):
         print(f"Metadata: {doc.metadata}\n")
 
 
-query = "vxEnableGraphStreaming "
+query = "how to register new kernel in tiovx"
 top_k = 5
 
 query_codebase(vector_store, query, top_k)

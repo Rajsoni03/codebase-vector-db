@@ -9,5 +9,5 @@ config = {
     "OLLAMA_URL": "http://localhost:11434",
     "MODEL": "unclemusclez/jina-embeddings-v2-base-code:f16",
     "CODE_EXTENSIONS": {'.py', '.js', '.jsx', '.ts', '.tsx', '.cpp', '.c', '.h', '.mak', '.mk', '.cmake', '.sh', '.txt', '.md', '.json', '.yaml', '.yml', '.xml', '.html'},
-    "BATCH_SIZE": 128
+    "BATCH_SIZE": 32
 }

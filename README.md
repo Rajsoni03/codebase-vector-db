@@ -128,4 +128,4 @@ query_codebase(vector_store, query, top_k)
 Contributions are welcome! Please open issues or submit pull requests for improvements or bug fixes.
 
 ## License
-MIT License. See the LICENSE file for details.
+MIT License. See the [LICENSE](LICENSE) file for details.
