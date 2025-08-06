@@ -10,12 +10,13 @@ from src.vector_store.chroma_store import ChromaStore
 VECTOR_STORE_PATH   = config["VECTOR_STORE_PATH"]
 MODEL               = config["MODEL"]
 CODE_EXTENSIONS     = config["CODE_EXTENSIONS"]
+OLLAMA_URL          = config["OLLAMA_URL"]
 
 ##########################################################################
 ####################[ Create Embedder & Text Splitter ]###################
 
 embedder = OllamaEmbedder(
-    url="http://localhost:11434",
+    url=OLLAMA_URL,
     model_name=MODEL,
     timeout=120
 )
