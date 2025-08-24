@@ -1,96 +1,119 @@
 import requests
 import json
-from settings import config
+from settings import config, TerminalColor, print_colored
+from src.llm.ollama import OllamaClient
 
-OLLAMA_URL = config["OLLAMA_URL"]
+MAIN_MODEL = config["MAIN_MODEL"]
+DEBUG_MODE = config["DEBUG_MODE"]
+
+
+client = OllamaClient()
 
 def search_code(vector_store, query, k=3):
     docs = vector_store.vector_store.similarity_search(query, k=k)
-    return "\n\n".join([doc.page_content for doc in docs])
 
-def chat_with_tools(messages, vector_store):
+    results = ""
+    for doc in docs:
+        divider = "-" * 50
+        results += (
+            f"{divider}\n"
+            f"## Found in {doc.metadata['file_path']} \n\n```{doc.metadata['language']}\n"
+            f"{doc.page_content}\n```\n"
+            f"{divider}\n\n"
+        )
 
-    OLLAMA_API_URL = OLLAMA_URL.rstrip("/") + "/api/chat"
-    tools = [
-        {
-            "name": "search_code",
-            "description": "Searches codebase documents for relevant information.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "k": {"type": "integer", "description": "Number of results", "default": 3}
-                },
-                "required": ["query"]
-            }
-        }
-    ]
+    return results
+
+def chat_with_tools(messages, vector_store, model=MAIN_MODEL):
+    user_msg = messages[-1]
 
     while True:
-        response = requests.post(OLLAMA_API_URL, json={
-            "model": "qwen2.5-coder:3b",
-            "messages": messages,
-            "tools": tools,
-            "stream": False
-        })
-        result = response.json()
-        message = result.get('message', {})
-        print("🤖 Model Response:")
-        print(json.dumps(message, indent=2))
+
+        response_stream = client.chat(
+            model=model,
+            messages=messages,
+            stream=True
+        )
+        print_colored("🤖 Model Response:", TerminalColor.BLUE)
+
+        is_thinking = False
+        llm_response = ""
+        for line in response_stream:
+            if line:
+                try:
+                    content = json.loads(line.decode('utf-8'))
+                    token = content["message"].get('content', '')
+
+                    if token.strip() == "<think>":
+                        is_thinking = True
+                    elif token.strip() == "</think>":
+                        is_thinking = False
+                        print_colored(f"{token}", TerminalColor.LIGHT_GRAY, end="", flush=True)
+                        continue
+                        
+                    if is_thinking:
+                        print_colored(f"{token}", TerminalColor.LIGHT_GRAY, end="", flush=True)
+                    else:
+                        llm_response += token
+                        print_colored(f"{token}", TerminalColor.CYAN, end="", flush=True)
+
+                    if content.get("done", False) and DEBUG_MODE:
+                        print_colored("\n====================================", TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Total Duration: {content["total_duration"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Load Duration: {content["load_duration"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Prompt Eval Count: {content["prompt_eval_count"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Prompt Eval Duration: {content["prompt_eval_duration"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Eval Count: {content["eval_count"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored(f'Eval Duration: {content["eval_duration"]}', TerminalColor.LIGHT_GRAY)
+                        print_colored("====================================", TerminalColor.LIGHT_GRAY)
+                except json.JSONDecodeError:
+                    print_colored("[Error] Error decoding JSON from stream.", TerminalColor.RED)
 
         # Try to get tool calls from 'tool_calls' or parse from 'content'
-        tool_calls = message.get("tool_calls")
         parsed_tool_calls = []
-        if tool_calls:
-            for tc in tool_calls:
+        for line in llm_response.split("\n"):
+            line = line.strip()
+            if "search_code(" in line:
                 try:
-                    arguments = json.loads(tc['arguments']) if isinstance(tc['arguments'], str) else tc['arguments']
-                except Exception:
-                    arguments = tc['arguments']
-                parsed_tool_calls.append({
-                    "name": tc['name'],
-                    "arguments": arguments,
-                    "id": tc.get("id")
-                })
-        else:
-            # Fallback: parse tool call(s) from 'content' if present
-            if isinstance(message.get("content"), str):
-                content_str = message["content"].strip()
-                import re
-                json_objects = re.findall(r'\{[^{}]*\{[^{}]*\}[^{}]*\}|\{[^{}]*\}', content_str)
-                for obj_str in json_objects:
-                    obj_str = obj_str.strip()
+                    query = line.split("search_code(\"")[1].split("\", k=")[0]
+                    k = int(line.split("k=")[1].strip(")"))
+                    if not "replace this with actual query" in query:
+                        parsed_tool_calls.append({"name": "search_code", "arguments": {"query": query, "k": k}})
+                except Exception as e:
+                    print(f"Error parsing tool call from content: {e}\nContent: {line}")
                     try:
-                        content_json = json.loads(obj_str)
-                        if isinstance(content_json, dict) and content_json.get("name"):
-                            parsed_tool_calls.append({
-                                "name": content_json.get("name"),
-                                "arguments": content_json.get("arguments", {}),
-                            })
-                            print("\n🔧 Parsed Tool Call from content:")
-                            print(json.dumps(parsed_tool_calls[-1], indent=2))
-                    except Exception as e:
-                        print(f"Error parsing tool call from content: {e}\nContent: {obj_str}")
+                        query = line.split("search_code(\"")[1].split("\", k=")[0]
+                        k = int(line.split("k=")[1].strip(")"))
+                        print_colored(f"query: {query}, k: {k}", TerminalColor.RED)
+                    except:
+                        pass
 
         # If no tool calls, break and print final answer
         if not parsed_tool_calls:
-            print("\n✅ Final Model Reply:")
-            print(message.get("content", "No content returned."))
+            print_colored("\n✅ Debugging Complete.\n", TerminalColor.GREEN)
             break
 
         # Only support search_docs tool
+        tool_result_all = ""
         for tc in parsed_tool_calls:
-            print(f"\n🔧 Tool Call: {tc}")
+            print_colored(f"\n🔧 Tool Call: {tc}", TerminalColor.RED)
             tool_name = tc["name"]
             arguments = tc["arguments"]
             if tool_name == "search_code" and arguments:
                 query = arguments.get("query")
-                k = arguments.get("k", 3)
+                k = arguments.get("k", 2)
                 tool_result = search_code(vector_store, query, k)
-                print(f"\n🔧 Tool Result: {tool_result}")
-                tool_response_message = {
-                    "role": "tool",
-                    "content": tool_result
-                }
-                messages.append(message)  # model's tool_call message
-                messages.append(tool_response_message)  # tool's result
+                print_colored(f"\n🔧 Tool Result: {tool_result[0:200]}\n" + "...\n"*3, TerminalColor.LIGHT_GRAY)
+                tool_result_all += tool_result
+
+        messages.extend([
+            {
+                "role": "assistant",
+                "content": llm_response
+            },
+            {
+                "role": "tool",
+                "content": tool_result_all# f"## Here is the tool result from query\n query: {query} \n result: {tool_result}\n\nUse this information for further debugging."
+            },
+            user_msg
+        ])

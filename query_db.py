@@ -6,7 +6,7 @@ from src.vector_store.chroma_store import ChromaStore
 ###########################[ Global Variables ]###########################
 
 VECTOR_STORE_PATH   = config["VECTOR_STORE_PATH"]
-MODEL               = config["MODEL"]
+EMBEDDING_MODEL     = config["EMBEDDING_MODEL"]
 CODE_EXTENSIONS     = config["CODE_EXTENSIONS"]
 OLLAMA_URL          = config["OLLAMA_URL"]
 
@@ -15,7 +15,7 @@ OLLAMA_URL          = config["OLLAMA_URL"]
 
 embedder = OllamaEmbedder(
     url=OLLAMA_URL,
-    model_name=MODEL,
+    model_name=EMBEDDING_MODEL,
     timeout=120
 )
 

@@ -1,11 +1,15 @@
 from git import Repo
 import xml.etree.ElementTree as ET
+import re
+from typing import List, Dict
 from pprint import pprint
 import os 
 import subprocess
 import requests
 import json
 import multiprocessing
+
+from settings import TerminalColor, print_colored
 
 
 # Parse the XML file to extract project information
@@ -49,8 +53,8 @@ def parse_xml(file_path, remote_dict, project_dict, workarea_path):
 
 
 # check the diff between the next and prod of each project
-def check_repo_diff(args, workarea_path):
-    project_name, next_dict, prod_dict = args
+def check_repo_diff(args):
+    project_name, next_dict, prod_dict, workarea_path = args
     next_project = next_dict.get(project_name)
     prod_project = prod_dict.get(project_name)
 
@@ -80,15 +84,14 @@ def check_repo_diff(args, workarea_path):
         next_repo = Repo(next_repo_path)
         prod_repo = Repo(prod_repo_path)
 
-        next_repo.git.fetch(remote, next_branch)
-        prod_repo.git.fetch(remote, prod_branch)
-
         # Check if the revision is a tag or branch
         if prod_branch.startswith("refs/tags/"):
             diff_with_prod = next_repo.git.diff(prod_branch)
         else:
+            next_repo.git.fetch(remote, next_branch)
+            prod_repo.git.fetch(remote, prod_branch)
             diff_with_prod = next_repo.git.diff(f"{remote}/{prod_branch}")
-        print(f"Adding diff for {project_name}:")
+        print_colored(f"Adding diff for {project_name}:", TerminalColor.LIGHT_GRAY)
         return (project_name, diff_with_prod)
     except Exception as e:
         print(f"Error while checking diff for project {project_name}: {e}")
@@ -107,6 +110,133 @@ def get_all_diff(next_project_dict, prod_project_dict, workarea_path):
             changes_dict[name] = data
 
     return changes_dict
+
+def detect_language(filename: str) -> str:
+    """Detect language from file extension for syntax highlighting."""
+    ext = os.path.splitext(filename)[1].lower()
+    mapping = {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".java": "java",
+        ".cpp": "cpp",
+        ".c": "c",
+        ".h": "c",
+        ".html": "html",
+        ".css": "css",
+        ".md": "markdown",
+        ".json": "json",
+        ".yml": "yaml",
+        ".yaml": "yaml"
+    }
+    return mapping.get(ext, "")
+
+def parse_git_diff(diff_text: str) -> List[str]:
+    """
+    Convert git diff string into a list of markdown strings per file
+    with rich metadata for AI consumption.
+    """
+    # Split into chunks per file
+    file_diffs = re.split(r'(?=^diff --git )', diff_text, flags=re.MULTILINE)
+    markdown_files = []
+
+    for chunk in file_diffs:
+        if not chunk.strip():
+            continue
+
+        header_match = re.search(r'diff --git a/(.+?) b/(.+)', chunk)
+        if not header_match:
+            continue
+
+        old_file = header_match.group(1)
+        new_file = header_match.group(2)
+        filename = new_file
+
+        # Determine status
+        if 'new file mode' in chunk:
+            status = 'added'
+        elif 'deleted file mode' in chunk:
+            status = 'deleted'
+        elif re.search(r'rename from', chunk):
+            status = 'renamed'
+        else:
+            status = 'modified'
+
+        # Count added and removed lines
+        added_lines = len(re.findall(r'^\+[^+]', chunk, flags=re.MULTILINE))
+        removed_lines = len(re.findall(r'^-[^-]', chunk, flags=re.MULTILINE))
+
+        if added_lines == 0 and removed_lines == 0:
+            # No changes
+            continue
+
+        # Extract code changes
+        code_match = re.search(r'(@@[\s\S]+)', chunk)
+        code_changes = code_match.group(1) if code_match else ''
+
+        language = detect_language(filename)
+
+        # YAML frontmatter metadata
+        metadata = (
+            "---\n"
+            f"**Old Path:** {old_file}\n"
+            f"**New Path:** {new_file}\n"
+            f"**Status:** {status}\n"
+            f"**Change Type:** {status}\n"
+            f"**Lines Added:** {added_lines}\n"
+            f"**Lines Removed:** {removed_lines}\n"
+            f"**Language:** {language}\n"
+            # f"**Tags:** [\"git-diff\", \"code-change\"]\n"
+            "---\n"
+        )
+        
+        # Parse hunks and add line numbers
+        diff_lines = []
+        hunks = re.split(r'(?=^@@ )', chunk, flags=re.MULTILINE)
+
+        for hunk in hunks:
+            hunk_header = re.match(r'^@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@', hunk)
+            if not hunk_header:
+                continue
+
+            old_start, old_count, new_start, new_count = map(lambda x: int(x) if x else 0, hunk_header.groups())
+
+            old_line = old_start
+            new_line = new_start
+
+            for line in hunk.splitlines()[1:]:
+                if line.startswith('+') and not line.startswith('+++'):
+                    diff_lines.append(f"{old_line:>5} | {new_line:>5} | + {line[1:]}")
+                    new_line += 1
+                elif line.startswith('-') and not line.startswith('---'):
+                    diff_lines.append(f"{old_line:>5} | {new_line:>5} | - {line[1:]}")
+                    old_line += 1
+                else:
+                    diff_lines.append(f"{old_line:>5} | {new_line:>5} |   {line[1:]}")
+                    old_line += 1
+                    new_line += 1
+
+        # Markdown content
+        markdown = (f"# File: `{filename}`\n"
+                    f"## Metadata\n"
+                    f"{metadata}\n"
+                    "---\n"
+                    f"## Code Changes with Line Numbers:\n"
+                    "```diff\n"
+                    " OLD   |  NEW  | CODE\n"
+                    "-----------------------\n"
+                    f"{chr(10).join(diff_lines)}\n"
+                    "```\n"
+                )
+
+        # Optionally, provide language-specific code block if needed
+        if language and status != "deleted":
+            clean_code = "\n".join(line[1:] for line in code_changes.splitlines() if line.startswith('+') and not line.startswith('+++'))
+            if clean_code.strip():
+                markdown += f"""```\nNew Code Extract:\n{clean_code.strip()}\n```"""
+        markdown_files.append(markdown)
+
+    return markdown_files
 
 
 if __name__ == "__main__":

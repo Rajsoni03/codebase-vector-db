@@ -3,3 +3,4 @@ langchain-community
 chromadb
 ollama
 gitpython
+pydantic-ai

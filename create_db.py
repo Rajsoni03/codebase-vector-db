@@ -10,7 +10,7 @@ from settings import config
 
 CODEBASE_PATH       = config["CODEBASE_PATH"]
 VECTOR_STORE_PATH   = config["VECTOR_STORE_PATH"]
-MODEL               = config["MODEL"]
+EMBEDDING_MODEL     = config["EMBEDDING_MODEL"]
 CODE_EXTENSIONS     = config["CODE_EXTENSIONS"]
 BATCH_SIZE          = config["BATCH_SIZE"]
 OLLAMA_URL          = config["OLLAMA_URL"]
@@ -25,13 +25,13 @@ OLLAMA_URL          = config["OLLAMA_URL"]
 
 embedder = OllamaEmbedder(
     url=OLLAMA_URL,
-    model_name=MODEL,
+    model_name=EMBEDDING_MODEL,
     timeout=120
 )
 
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=7000, # model specific, adjust as needed
-    chunk_overlap=1000, # 10-20% of chunk size, adjust as needed
+    chunk_size=256, # model specific, adjust as needed
+    chunk_overlap=100, # 10-20% of chunk size, adjust as needed
     separators=["\n\n", "\n", ";", " ", ""]
 )
 

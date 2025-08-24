@@ -1,0 +1,15 @@
+
+services:
+  postgres:
+    # image: artifactory.itg.ti.com/docker-public-local/postgres:17.2-alpine3.20
+    image: postgres:17.2-alpine3.20
+    container_name: postgres-ai-db
+    ports:
+      - 5432:5432
+    restart: always
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "password"
+      PGDATA: "/data/postgres"
+    volumes:
+      - ./db:/data/postgres
